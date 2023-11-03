@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>Socket.IO chat</title>
+    <style>
+        body {
+            margin: 0;
+            padding-bottom: 3rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        #form {
+            background: rgba(0, 0, 0, 0.15);
+            padding: 0.25rem;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            height: 3rem;
+            box-sizing: border-box;
+            backdrop-filter: blur(10px);
+        }
+
+        #input {
+            border: none;
+            padding: 0 1rem;
+            flex-grow: 1;
+            border-radius: 2rem;
+            margin: 0.25rem;
+        }
+
+        #input:focus {
+            outline: none;
+        }
+
+        #form > button {
+            background: #333;
+            border: none;
+            padding: 0 1rem;
+            margin: 0.25rem;
+            border-radius: 3px;
+            outline: none;
+            color: #fff;
+        }
+
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #messages > li {
+            padding: 0.5rem 1rem;
+        }
+
+        #messages > li:nth-child(odd) {
+            background: #efefef;
+        }
+    </style>
+</head>
+<body>
+<button id="start_btn">Start</button>
+<div align="center">
+    <p id="player"></p>
+    <p id="board"></p>
+</div>
+<ul id="messages"></ul>
+<form id="form" action="">
+    <input id="input" autocomplete="off"/>
+    <button>Send</button>
+</form>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const messages = document.getElementById('messages');
+    const start_button = document.getElementById('start_btn');
+    const board_view = document.getElementById('board');
+    const player_view = document.getElementById('player');
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (input.value) {
+            socket.emit('chat message', input.value);
+            input.value = '';
+        }
+    });
+
+    start_button.addEventListener('click', (e) => {
+        e.preventDefault();
+        socket.emit('init board');
+    });
+
+    socket.on('chat message', (msg) => {
+        const item = document.createElement('li');
+        item.innerHTML = msg;
+        messages.appendChild(item);
+        window.scrollTo(0, document.body.scrollHeight);
+    });
+
+    socket.on('init board', () => {
+        init_game();
+        board_view.innerHTML = print_board(board);
+    });
+
+    socket.on('put stone', (row, col) => {
+        put_stone(board, row, col, stone);
+        board_view.innerHTML = print_board(board);
+    })
+
+    // socket을 이용해서 오목을 만들어보자.
+    const black = 1
+    const white = 2
+    const black_mark = ' x '  // 1
+    const white_mark = ' o '  // 2
+
+    let board = get_init_board();
+    let stone = 1;
+
+    // 15 x 15 오목판 반환
+    function get_init_board() {
+        return Array.from(Array(15), () => new Array(15).fill(0));
+    }
+
+    function init_game() {
+        init_board();
+        stone = 1;
+        player_view.innerHTML = "흑돌의 차례입니다.";
+    }
+
+    function init_board() {
+        board = Array.from(Array(15), () => new Array(15).fill(0));
+    }
+
+    // 현재 상태의 오목판을 그린다.
+    function print_board(board) {
+        let board_str = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; A &nbsp;B &nbsp;C &nbsp; D &nbsp; E &nbsp;F &nbsp;G &nbsp;H &nbsp; I &nbsp; J &nbsp; K &nbsp;L &nbsp; M &nbsp;N &nbsp;O &nbsp;<br/>';
+        for (let i = 0; i < 15; i++) {
+            let row = '|';
+            for (let j = 0; j < 15; j++) {
+                if (board[i][j] === 1) {
+                    row += black_mark;
+                } else if (board[i][j] === 2) {
+                    row += white_mark;
+                } else {
+                    row += "&nbsp;&nbsp;&nbsp; ";
+                }
+                row += "|";
+            }
+            row += "<br/>";
+
+            if (i + 1 < 10) {
+                board_str += (i + 1).toString() + "&nbsp;&nbsp;&nbsp;" + row;
+            } else {
+                board_str += (i + 1).toString() + "&nbsp;&nbsp;" + row;
+            }
+            // console.log(row);
+        }
+        return board_str;
+    }
+
+    // 돌 놓기
+    function put_stone(board, row, col, stone) {
+        if (board[row][col] !== 0) {
+            console.log("이미 돌이 존재하는 곳에는 돌을 둘 수 없습니다.");
+            return;
+        }
+
+        board[row][col] = stone
+
+        if (check_winner(board)) {
+            return;
+        }
+
+        change_stone(stone);
+    }
+
+    // 오목 여부
+    function check_winner(board) {
+        for (let i = 0; i < 11; i++) {
+            for (let j = 0; j < 11; j++) {
+                let cur_stone = board[i][j];
+                if (cur_stone === 0) {
+                    continue;
+                }
+
+                for (let k = 1; k < 5; k++) {
+                    let next_stone = board[i][j + k];
+
+                    if (cur_stone !== next_stone) {
+                        break;
+                    }
+
+                    if (k === 4) {
+                        if (cur_stone === black) {
+                            socket.emit('chat message', "흑돌의 승리!");
+                        } else {
+                            socket.emit('chat message', "백돌의 승리!");
+                        }
+                        return true;
+                    }
+                }
+
+                for (let k = 1; k < 5; k++) {
+                    let next_stone = board[i + k][j];
+
+                    if (cur_stone !== next_stone) {
+                        break;
+                    }
+
+                    if (k === 4) {
+                        if (cur_stone === black) {
+                            socket.emit('chat message', "흑돌의 승리!");
+                        } else {
+                            socket.emit('chat message', "백돌의 승리!");
+                        }
+                        return true;
+                    }
+                }
+
+                for (let k = 1; k < 5; k++) {
+                    let next_stone = board[i + k][j + k];
+
+                    if (cur_stone !== next_stone) {
+                        break;
+                    }
+
+                    if (k === 4) {
+                        if (cur_stone === black) {
+                            socket.emit('chat message', "흑돌의 승리!");
+                        } else {
+                            socket.emit('chat message', "백돌의 승리!");
+                        }
+                        return true;
+                    }
+                }
+
+            }
+        }
+        return false;
+    }
+
+    function change_stone(cur_stone) {
+        if (cur_stone === 1) {
+            stone = 2;
+            player_view.innerHTML = "백돌의 차례입니다.";
+        } else {
+            stone = 1;
+            player_view.innerHTML = "흑돌의 차례입니다.";
+        }
+    }
+</script>
+</body>
+</html>
